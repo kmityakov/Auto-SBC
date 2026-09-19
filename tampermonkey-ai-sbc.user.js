@@ -7327,6 +7327,17 @@ const playerItemOverride = () => {
     return result;
   };
 
+  const UTItemView_render = UTItemView.prototype.render;
+  UTItemView.prototype.render = function (item, ...args) {
+    const result = UTItemView_render.call(this, item, ...args);
+    if (item) {
+      const rootElement = this.getRootElement();
+      appendPriceToSlot(rootElement, item);
+      queueMissingPrice(rootElement, item);
+    }
+    return result;
+  };
+
   const UTPlayerItemView_renderItem = UTPlayerItemView.prototype.renderItem;
   UTPlayerItemView.prototype.renderItem = async function (item, t) {
     const result = UTPlayerItemView_renderItem.call(this, item, t);
@@ -7338,11 +7349,7 @@ const playerItemOverride = () => {
     ) {
       this.__root.style.opacity = "0.4";
     }
-    let priceElement = await getPriceDiv(item);
-    // Add the price element to the player item
-    if (this.__root && priceElement) {
-      this.__root.prepend(priceElement);
-    }
+    await appendPriceToSlot(this.__root, item);
 
     if (isItemLocked(item)) {
       addClass(this, "locked");
@@ -7380,7 +7387,6 @@ const getPriceDiv = async (item) => {
 
     if (isFodder(item)) {
       priceElement.style.border = "1px solid red"; // Add red border for fodder players
-      priceElement.style.color = "#ff0000"; // Change text color to red as well
     }
     priceElement.textContent = PriceItems[item.definitionId]?.isExtinct
       ? "EXTINCT"
@@ -8181,7 +8187,7 @@ let fetchLivePlayerPrice = async (player) => {
 // expose as global to avoid "declared but its value is never read" warnings
 window.fetchLivePlayerPrice = fetchLivePlayerPrice;
 
-let fetchPlayerPrices = async (players) => {
+let fetchPlayerPrices = async (players, quiet = false) => {
   // Filter out players that need price updates
   let idsArray = players
     .filter((f) => isPriceOld(f) && f?.isPlayer())
@@ -8193,7 +8199,9 @@ let fetchPlayerPrices = async (players) => {
   // Create progress bar
   const progressBarId = "prices-progress-bar";
   const containerId = "prices-progress-container";
-  createProgressBar(progressBarId, containerId, "Fetching Player Prices");
+  if (!quiet) {
+    createProgressBar(progressBarId, containerId, "Fetching Player Prices");
+  }
 
   let duplicateIds = await fetchDuplicateIds();
   let totalPrices = idsArray.length;
@@ -8239,8 +8247,10 @@ let fetchPlayerPrices = async (players) => {
 
       // Update progress
       fetched += playersIdArray.length;
-      const progress = (fetched / totalPrices) * 100;
-      updateProgressBar(progressBarId, progress);
+      if (!quiet) {
+        const progress = (fetched / totalPrices) * 100;
+        updateProgressBar(progressBarId, progress);
+      }
     } catch (error) {
       console.error(error);
       await wait();
@@ -8250,9 +8260,11 @@ let fetchPlayerPrices = async (players) => {
   }
 
   // Remove progress bar after completion
-  removeProgressBar(containerId);
+  if (!quiet) {
+    removeProgressBar(containerId);
+  }
 
-  if (totalPrices > 0) {
+  if (totalPrices > 0 && !quiet) {
     showNotification(
       `Fetched ${totalPrices} player prices`,
       UINotificationType.POSITIVE
@@ -8530,7 +8542,59 @@ const appendSquadTotal = (total) => {
     }
   }
 };
+// Club tiles render one item at a time and no club code path fetches prices, so
+// unpriced players are collected as they render and fetched in one batch.
+const priceFetchQueue = new Map();
+const renderedPriceTargets = new Map();
+let priceFetchTimer = null;
+
+const queueMissingPrice = (rootElement, item) => {
+  if (!rootElement || !getSettings(0, 0, "showPrices")) {
+    return;
+  }
+  if (!(item?.definitionId > 0) || !item?.isPlayer?.()) {
+    return;
+  }
+  // a recycled tile must not be given the price of the item it used to show
+  if (renderedPriceTargets.has(rootElement)) {
+    renderedPriceTargets.set(rootElement, item.definitionId);
+  }
+  if (!isPriceOld(item)) {
+    return;
+  }
+  renderedPriceTargets.set(rootElement, item.definitionId);
+  priceFetchQueue.set(item.definitionId, item);
+  clearTimeout(priceFetchTimer);
+  priceFetchTimer = setTimeout(flushPriceFetchQueue, 300);
+};
+
+const flushPriceFetchQueue = async () => {
+  const items = [...priceFetchQueue.values()];
+  priceFetchQueue.clear();
+  if (!items.length) {
+    return;
+  }
+
+  await fetchPlayerPrices(items, true);
+
+  const fetchedById = new Map(items.map((f) => [f.definitionId, f]));
+  for (const [rootElement, definitionId] of renderedPriceTargets) {
+    if (!rootElement.isConnected) {
+      renderedPriceTargets.delete(rootElement);
+      continue;
+    }
+    const item = fetchedById.get(definitionId);
+    if (item) {
+      appendPriceToSlot(rootElement, item);
+    }
+  }
+};
+
 const appendPriceToSlot = async (rootElement, item) => {
+  if (!rootElement) {
+    return;
+  }
+  rootElement.querySelector(":scope > .item-price")?.remove();
   let priceElement = await getPriceDiv(item);
   if (priceElement) {
     rootElement.prepend(priceElement);
