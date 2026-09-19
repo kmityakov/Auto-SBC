@@ -4589,7 +4589,7 @@ let fetchPlayers = ({ count = Infinity, level, rarities, sort } = {}) => {
         offset,
         sort,
       }).observe(undefined, async (sender, response) => {
-        result = [...response.response.items];
+        result = result.concat(response.response.items);
 
         if (
           result.length < count &&
