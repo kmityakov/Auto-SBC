@@ -97,10 +97,13 @@ def create_var(model, df, map_idx, num_cnts, sbc):
     }
     # Try adding hints to solver to enable rerun of solver multiple times and start where you left off
     playerHints = []
+    has_current_solution = any(
+        assetId is not None for assetId in sbc["currentSolution"]
+    )
     for i in range(num_players):
         boolVar = model.NewBoolVar(f"player{i}")
         player.append(boolVar)
-        if sum(1 for _ in filter(None.__ne__, sbc["currentSolution"])) > 0:
+        if has_current_solution:
             if df.at[i, "assetId"] in sbc["currentSolution"]:
                 solutionPosition = sbc["formation"][
                     sbc["currentSolution"].index(df.at[i, "assetId"])
