@@ -24,6 +24,7 @@
 // @connect 	 www.fut.gg
 // @require      https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.17/d3.min.js
 // @connect      127.0.0.1
+// @connect      enhancer-api.futnext.com
 
 // ==/UserScript==
 
@@ -8202,11 +8203,28 @@ let fetchPlayerPrices = async (players) => {
     const playersIdArray = idsArray.splice(0, 50);
 
     try {
-      const futggResponse = await makeGetRequest(
-        `https://www.fut.gg/api/fut/player-prices/27/?ids=${playersIdArray}`
+      const quotesResponse = await makeGetRequest(
+        `https://enhancer-api.futnext.com/players/v2/prices?ids=${playersIdArray.join(
+          "_"
+        )}&platform=ps`
       );
 
-      let priceResponse = JSON.parse(futggResponse).data;
+      let priceResponse = {};
+      for (const quote of JSON.parse(quotesResponse)) {
+        priceResponse[quote.definitionId] = {
+          eaId: quote.definitionId,
+          price: quote.price,
+        };
+      }
+      // the provider omits players it holds no market price for; those are
+      // unpriceable rather than free
+      for (const definitionId of playersIdArray) {
+        priceResponse[definitionId] ??= {
+          eaId: definitionId,
+          price: 0,
+          isExtinct: true,
+        };
+      }
       // Add rating and name information to the price response
       for (let key in priceResponse) {
         // Find the matching player in the players array
