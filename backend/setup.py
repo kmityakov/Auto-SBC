@@ -250,6 +250,8 @@ def runAutoSBC(sbc, players, maxSolveTime):
             condition = df["rarityId"].isin(req["eligibilityValues"])
         elif req["requirementKey"] == "PLAYER_EXACT_OVR":
             condition = df["rating"].isin(req["eligibilityValues"])
+        elif req["requirementKey"] == "PLAYER_LEVEL":
+            condition = df["ratingTier"].isin(req["eligibilityValues"])
         else:
             condition = pd.Series([True] * len(df))
         count_matches = (
