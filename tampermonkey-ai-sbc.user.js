@@ -4868,6 +4868,11 @@ const searchStoragePlayers = (searchCriteria) => {
 
 let dealWithUnassigned = async () => {
   try {
+    if (!getSettings(0, 0, "autoHandleUnassigned")) {
+      await ratingCountUI();
+      return fetchUnassigned();
+    }
+
     let storage = await getStoragePlayers();
     let ulist = await fetchUnassigned();
     let players = await fetchPlayers();
@@ -8420,7 +8425,7 @@ const packOverRide = async () => {
   UTStoreViewController.prototype.eOpenPack = async function (...args) {
     hideLoader();
     showLoader();
-    await dealWithUnassigned();
+    const unassigned = await dealWithUnassigned();
     createSBCTab();
 
     let packs = await getPacks();
@@ -8436,7 +8441,7 @@ const packOverRide = async () => {
     if (packs.packs.filter((f) => f.id == item).length > 0) {
       if (packToOpen.isMyPack) {
         await openPack(packToOpen);
-      } else {
+      } else if (unassigned.length === 0) {
         let e = args[1];
         let m =
           e === "UTStorePackDetailsView.Event.BUY_POINTS" ||
@@ -8804,6 +8809,10 @@ const createPackList = async () => {
         if (pack.pack.isMyPack) {
           await openPack(packToOpen, pack.count, packName === "Open All Packs");
         } else {
+          if ((await dealWithUnassigned()).length > 0) {
+            goToUnassignedView();
+            return;
+          }
           packToOpen
             .purchase(GameCurrency.COINS)
             .observe(new UTStoreViewController(), async (obs, event) => {
@@ -9382,6 +9391,15 @@ sbcSettingsView.prototype._generate = function _generate() {
     getSettings(0, 0, "priceCacheMinutes"),
     (numberspinnerPCM) => {
       saveSettings(0, 0, "priceCacheMinutes", numberspinnerPCM.getValue());
+    }
+  );
+  createToggle(
+    sbcUITile,
+    "Auto-Handle Unassigned Items (Moves items to club and storage)",
+    "autoHandleUnassigned",
+    getSettings(0, 0, "autoHandleUnassigned"),
+    (toggleAHU) => {
+      saveSettings(0, 0, "autoHandleUnassigned", toggleAHU.getToggleState());
     }
   );
   createToggle(
@@ -10284,6 +10302,7 @@ const defaultSBCSolverSettings = {
   useDupes: true,
   autoOpenPacks: false,
   autoOpenPlayerPicks: false,
+  autoHandleUnassigned: true,
   saveTotw: false,
   sbcType: "Favourites",
   showLogOverlay: false,
